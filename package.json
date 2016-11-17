@@ -1,0 +1,19 @@
+{
+  "name": "generator-xataface",
+  "version": "0.1.0",
+  "description": "Generates a Xataface application",
+  "files": [
+    "app",
+    "router"
+  ],
+  "keywords": [
+    "yeoman-generator",
+    "xataface",
+    "php",
+    "mysql",
+    "database"
+  ],
+  "dependencies": {
+    "yeoman-generator": "^0.24.1"
+  }
+}
