@@ -241,8 +241,27 @@ module.exports = generators.Base.extend({
             type: 'list',
             choices: ['ALL', 'READ ONLY'],
             name: 'userPermissions',
-            message: 'User permissions',
+            message: 'User permissions (when logged)',
             default: 'READ ONLY'
+        }]).then(function(answers) {
+            this.options.userPermissions = answers.userPermissions;
+            //this.log('base package', answers.pkg);
+        }.bind(this));
+    }
+    
+    
+    
+    
+  },
+  
+  promptPublicPermissions: function() {
+    if (this.options.setupUsersTable == 'y' && !this.options.publicPermissions) {
+        return this.prompt([{
+            type: 'list',
+            choices: ['NO ACCESS', 'READ ONLY'],
+            name: 'userPermissions',
+            message: 'Public permissions (access when not logged in)',
+            default: 'NO ACCESS'
         }]).then(function(answers) {
             this.options.userPermissions = answers.userPermissions;
             //this.log('base package', answers.pkg);
@@ -448,7 +467,7 @@ module.exports = generators.Base.extend({
         + "            return Dataface_PermissionsTool::ALL();\r\n"
         + "        } else if (getUser()) {\r\n"
         + "            return " + userPermissions +";\r\n"
-        + "        } else {\r\n" +
+        + "        } else {\r\n" 
         + "            return " + publicPermissions + ";\r\n"
         + "        }\r\n"
         + "    }\r\n"
