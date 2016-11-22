@@ -23,9 +23,9 @@ This will create your xataface application in a directory "myapp".
 You can avoid prompts by providing command-line options.
 
 ~~~~
-$ yo xataface --help
+$ yo xataface myapp --help
 Usage:
-  yo xataface:app [options] <appname>
+  yo xataface:app [options] <appname> [<installFile>]
 
 Options:
   -h,   --help                # Print the generator's options and usage
@@ -53,8 +53,8 @@ Options:
         --createAdminUser     # y=Insert an admin user for the app into the users table.
 
 Arguments:
-  appname    Type: String  Required: true
-  
+  appname      # Used for the app directory name, and default database name                  Type: String  Required: true
+  installFile  # Path to SQL file containing commands to execute upon creating the database  Type: String  Required: false
 ~~~~
 
 
