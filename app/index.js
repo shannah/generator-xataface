@@ -1,5 +1,55 @@
 var generators = require('yeoman-generator');
 var fs = require('fs');
+
+var promptMySQLHost = function(self) {
+    if (!self.options.mysqlHost) {
+        return self.prompt([{
+                type: 'input',
+                name: 'mysqlHost',
+                message: 'MySQL Hostname',
+                default: 'localhost',
+                store: true
+            }
+        ]).then(function(answers) {
+            self.options.mysqlHost = answers.mysqlHost;
+            //this.log('base package', answers.pkg);
+        }.bind(self));
+    }
+};
+var promptMySQLUser = function(self) {
+    if (!self.options.mysqlUser) {
+    
+        self.log("This generator needs to execute some SQL commands that require MySQL root permissions.  This may include things like creating a database for the app, creating a MySQL user for the app to access the database or granting permissions to a MySQL user for the app to access the database. \n"
+            + " This username will not be used by the app itself and will not be stored anywhere.  It is just for the purpose of setting up the app initially.\n"
+        ); 
+        return self.prompt([{
+            type: 'input',
+            name: 'mysqlUser',
+            message: 'Root MySQL Username',
+            default: 'root',
+            store: true
+        }]).then(function(answers) {
+            self.options.mysqlUser = answers.mysqlUser;
+            //this.log('base package', answers.pkg);
+        }.bind(self));
+    }
+};
+var promptMySQLPassword = function(self) {
+    // let's actually not request the password... the user will be asked at the command prompt
+    self.options.mysqlPassword = '';
+    return;
+    if (!self.options.mysqlPassword) {
+        return self.prompt([{
+            type: 'password',
+            name: 'mysqlPassword',
+            message: 'Root MySQL Password'
+        }]).then(function(answers) {
+            self.options.mysqlPassword = answers.mysqlPassword;
+            //this.log('base package', answers.pkg);
+        }.bind(self));
+    }
+};
+
 module.exports = generators.Base.extend({
   // The name `constructor` is important here
   constructor: function () {
@@ -7,7 +57,8 @@ module.exports = generators.Base.extend({
     generators.Base.apply(this, arguments);
 
     // Next, add your custom code
-    this.argument('appname', {type: String, required: true});
+    this.argument('appname', {type: String, required: true, desc: "Used for the app directory name, and default database name"});
+    this.argument('installFile', {type: String, required: false, desc: "Path to SQL file containing commands to execute upon creating the database" });
     this.option('mysqlHost', {desc: "Hostname of MySQL server"});
     this.option('mysqlUser', {desc: "MySQL user to create database.  Usually root.  Only used by this generator.  Not the app."});
     this.option('mysqlPassword', {desc: "MySQL password to create database. Only used by this generator.  Not the app."});
@@ -32,54 +83,38 @@ module.exports = generators.Base.extend({
     
   },
   
-  promptMySQLHost: function() {
-    if (!this.options.mysqlHost) {
-        return this.prompt([{
-                type: 'input',
-                name: 'mysqlHost',
-                message: 'MySQL Hostname',
-                default: 'localhost',
-                store: true
-            }
-        ]).then(function(answers) {
-            this.options.mysqlHost = answers.mysqlHost;
-            //this.log('base package', answers.pkg);
-        }.bind(this));
-    }
+    checkRootDir: function() {
+        if (fs.existsSync(this.destinationPath(this.appname))) {
+            throw new Error("The target path "+this.appname+" already exists.  This generator is only for generating new Xataface apps.  Please choose an app name that doesn't yet exist.");
+        }
+        if (this.installFile && !fs.existsSync(this.destinationPath(this.installFile))) {
+            throw new Error("The specified installfile "+this.installFile+" does not exist");
+        }
+        //fs.mkdirSync(this.destinationPath(this.appname), 0o755);
+      },
+  
+    promptMySQLHost0 : function() {
+      return promptMySQLHost(this);
     },
-    promptMySQLUser: function() {
-    if (!this.options.mysqlUser) {
-        return this.prompt([{
-            type: 'input',
-            name: 'mysqlUser',
-            message: 'Root MySQL Username',
-            default: 'root',
-            store: true
-        }]).then(function(answers) {
-            this.options.mysqlUser = answers.mysqlUser;
-            //this.log('base package', answers.pkg);
-        }.bind(this));
-    }
-    },
-    promptMysqlPassword: function() {
-    if (!this.options.mysqlPassword) {
-        return this.prompt([{
-            type: 'password',
-            name: 'mysqlPassword',
-            message: 'Root MySQL Password'
-        }]).then(function(answers) {
-            this.options.mysqlPassword = answers.mysqlPassword;
-            //this.log('base package', answers.pkg);
-        }.bind(this));
-    }
-    },
+  
     promptDbName: function() {
     if (!this.options.dbName) {
+        this.log("The following series of prompts will set up the database connection information that is used by the app.  This includes the "
+            + "host name, database name, database user (for the app to connect to the database), and database password.\n\n"
+            + "This information will be stored in the app's conf.db.ini file and may be edited later on by you if you need to change it.\n");
+    
         return this.prompt([{
             type: 'input',
             name: 'dbName',
             message: 'App Database Name',
-            default: this.appname
+            default: this.appname,
+            validate: function (input) {
+                var done = this.async();
+                if (input.match(/[^a-zA-Z_0-9]/)) {
+                    done(false, "Please use only alpha-numerics and underscores in database name");
+                }
+                done(null, true);
+            }
         }]).then(function(answers) {
             this.options.dbName = answers.dbName;
             //this.log('base package', answers.pkg);
@@ -92,7 +127,14 @@ module.exports = generators.Base.extend({
             type: 'input',
             name: 'dbUser',
             message: 'App Database Username',
-            default: this.options.dbName
+            default: this.options.dbName.length > 16 ? this.options.dbName.substring(0,16) : this.options.dbName,
+            validate: function(input) {
+                var done = this.async();
+                if (input.length > 16) {
+                    done(false, "MySQL usernames can be max 16 characters");
+                }
+                done(null, true);
+            }
         }]).then(function(answers) {
             this.options.dbUser = answers.dbUser;
             //this.log('base package', answers.pkg);
@@ -117,6 +159,12 @@ module.exports = generators.Base.extend({
   
   promptTables : function() {
     if (!this.options.tables) {
+    
+        this.log("Xataface applications include a 'main' menu to allow the user to select the table that they wish to work with.  You *must* include at least one "
+            + "table in this menu, but you probably don't want to include all of your tables (e.g. join tables).  Only include the tables that you consider 'top-level'.\n\n"
+            + "Note:  If a table is not included in this menu it can still be accessed by the user either by entering the appropriate URL directly, or by way of relationships.\n"
+            + "If you wish to block access to a table, you should either use permissions, or the [_disallowed_tables] section of your conf.ini file.\n");
+    
         return this.prompt([{
             type: 'input',
             name: 'tables',
@@ -135,22 +183,69 @@ module.exports = generators.Base.extend({
     }
   },
   
+  promptUseDefaultAuthSettings : function () {
+        //if (this.options.setupUsersTable == 'y') {
+        
+            var defaultUsersTable = this.options.usersTable || 'users';
+            var defaultUsernameColumn = this.options.usernameColumn || 'username';
+            var defaultPasswordColumn = this.options.passwordColumn || 'password';
+            var defaultRoleColumn = this.options.roleColumn || 'role';
+            var defaultEmailColumn = this.options.emailColumn || 'email';
+            var defaultPasswordEncryption = this.options.passwordEncryption || 'sha1';
+            var defaultUserPermissions = this.options.userPermissions || 'READ ONLY';
+            var defaultPublicPermissions = this.options.publicPermissions || 'NO ACCESS';
+            
+            this.log("Default settings authentication are as follows:\n"
+                + "Table-based authentication with Users table definition: \n" 
+                +  "create table if not exists `" + defaultUsersTable + "` (\n"
+                + "    `"+defaultUsernameColumn+"` VARCHAR(100) NOT NULL PRIMARY KEY,\n"
+                + "    `"+defaultPasswordColumn+"` VARCHAR(64) NOT NULL,\n"
+                + "    `"+defaultRoleColumn+"` ENUM('USER','ADMIN') DEFAULT 'USER',\n"
+                + "    `"+defaultEmailColumn+"` VARCHAR(255) NOT NULL,\n"
+                + "    UNIQUE KEY (`"+defaultEmailColumn+"`));\n\n"
+                + " With "+defaultPasswordEncryption+" encryption on the password field.\r\n"
+                + "ADMIN users are granted ALL permissions, logged in users are granted "+defaultUserPermissions+" permissions, and the public (i.e. not logged-in users) are granted "+defaultPublicPermissions+".\n");
+                
+            return this.prompt([{
+                type: 'confirm',
+                name: 'useDefaultAuthSettings',
+                message: 'Would you like to use these default authentication settings?',
+                default: 'users'
+            }]).then(function(answers) {
+                if (answers.useDefaultAuthSettings) {
+                    this.options.usersTable = 'users';
+                    this.options.usernameColumn = 'username';
+                    this.options.passwordColumn = 'password';
+                    this.options.roleColumn = 'role';
+                    this.options.emailColumn = 'email';
+                    this.options.passwordEncryption = 'sha1';
+                    this.options.userPermissions = defaultUserPermissions;
+                    this.options.publicPermissions = defaultPublicPermissions;
+                }
+                //this.options.usersTable = answers.usersTable;
+                //this.log('base package', answers.pkg);
+            }.bind(this));
+        //}
+  },
+  
   promptSetupUsersTable : function() {
     if (!this.options.usersTable) {
         return this.prompt([{
-            type: 'input',
+            type: 'confirm',
             name: 'setupUsersTable',
-            message: 'Use table-based authentication? (y/n)',
-            default: 'y'
+            message: 'Use table-based authentication?',
+            default: true
         }]).then(function(answers) {
             this.options.setupUsersTable = answers.setupUsersTable;
-            //this.log('base package', answers.pkg);
+
         }.bind(this));
     }
   },
   
+  
+  
   promptUsersTable : function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.usersTable) {
+    if (this.options.setupUsersTable && !this.options.usersTable) {
         return this.prompt([{
             type: 'input',
             name: 'usersTable',
@@ -163,7 +258,7 @@ module.exports = generators.Base.extend({
     }
     },
   promptUsernameColumn : function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.usernameColumn) {
+    if (this.options.setupUsersTable && !this.options.usernameColumn) {
         return this.prompt([{
             type: 'input',
             name: 'usernameColumn',
@@ -177,7 +272,7 @@ module.exports = generators.Base.extend({
     },
     
     promptPasswordColumn: function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.passwordColumn) {
+    if (this.options.setupUsersTable && !this.options.passwordColumn) {
         return this.prompt([{
             type: 'input',
             name: 'passwordColumn',
@@ -191,7 +286,7 @@ module.exports = generators.Base.extend({
     },
     
     promptPasswordEncryption : function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.passwordEncryption) {
+    if (this.options.setupUsersTable && !this.options.passwordEncryption) {
         return this.prompt([{
             type: 'list',
             choices: ['sha1','md5','encrypt','password','none'],
@@ -207,7 +302,7 @@ module.exports = generators.Base.extend({
     
     promptEmailColumn : function() {
     
-    if (this.options.setupUsersTable == 'y' && !this.options.emailColumn) {
+    if (this.options.setupUsersTable && !this.options.emailColumn) {
         return this.prompt([{
             type: 'input',
             name: 'emailColumn',
@@ -222,7 +317,7 @@ module.exports = generators.Base.extend({
     
     
     promptRoleColumn : function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.roleColumn) {
+    if (this.options.setupUsersTable && !this.options.roleColumn) {
         return this.prompt([{
             type: 'input',
             name: 'roleColumn',
@@ -236,7 +331,7 @@ module.exports = generators.Base.extend({
     },
     
     promptUserPermissions: function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.userPermissions) {
+    if (this.options.setupUsersTable && !this.options.userPermissions) {
         return this.prompt([{
             type: 'list',
             choices: ['ALL', 'READ ONLY'],
@@ -255,7 +350,7 @@ module.exports = generators.Base.extend({
   },
   
   promptPublicPermissions: function() {
-    if (this.options.setupUsersTable == 'y' && !this.options.publicPermissions) {
+    if (this.options.setupUsersTable && !this.options.publicPermissions) {
         return this.prompt([{
             type: 'list',
             choices: ['NO ACCESS', 'READ ONLY'],
@@ -494,10 +589,10 @@ module.exports = generators.Base.extend({
   promptCreateDatabase : function() {
     if (!this.options.createDatabase) {
         return this.prompt([{
-                type: 'input',
+                type: 'confirm',
                 name: 'createDatabase',
-                message: 'Create the database ' + this.options.dbName+' now? (y/n)',
-                default: 'n'
+                message: 'Create the database ' + this.options.dbName+' now?',
+                default: false
             }
         ]).then(function(answers) {
             this.options.createDatabase = answers.createDatabase;
@@ -506,97 +601,176 @@ module.exports = generators.Base.extend({
     }
   },
   
-  createDatabase : function() {
-    if (this.options.createDatabase == 'y') {
+  
+  promptMySQLHost : function() {
+    if (this.options.createDatabase) {
+        return promptMySQLHost(this);
+    }
+  },
+  
+  promptMySQLUser : function() {
+    if (this.options.createDatabase) {
+        return promptMySQLUser(this);
+    }
+  },
+  
+  promptMySQLPassword : function() {
+    if (this.options.createDatabase) {
+        return promptMySQLPassword(this);
+    }
+  },
+  createDatabaseSql : function() {
+    if (this.options.createDatabase) {
         var mysqlPath = this.options.mysql || 'mysql';
-        while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', 'create database '+ this.options.dbName])) {
-            this.log('Failed.  Try again');
-        }
+        this.options.rootInstallSql = this.options.rootInstallSql || '';
+        var cmd = 'create database if not exists '+ this.options.dbName + ';';
+        this.options.rootInstallSql += cmd;
+        
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', 'create database '+ this.options.dbName])) {
+        //    this.log('Failed.  Try again');
+        //}
     }
   },
   
   promptCreateUser : function() {
     if (!this.options.createUser) {
         return this.prompt([{
-                type: 'input',
+                type: 'confirm',
                 name: 'createUser',
-                message: 'Create the user ' + this.options.dbUser+' now? (y/n)',
-                default: 'n'
+                message: 'Create the user ' + this.options.dbUser+' now?',
+                default: true
             }
         ]).then(function(answers) {
             this.options.createUser = answers.createUser;
-            //this.log('base package', answers.pkg);
+            this.options.grantPermissions = 'y';
+            
         }.bind(this));
     }
   },
   
-  
-  createUser: function() {
-    if (this.options.createUser == 'y') {
-        var mysqlPath = this.options.mysql || 'mysql';
-        //this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p', '<', '"create database if not exists '+ this.options.dbName +'"']);
-        var cmd = "CREATE USER '"+this.options.dbUser+"'@'localhost' IDENTIFIED BY '"+this.options.dbPassword+"';";
-        this.log("Executing " + cmd);
-        while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
-            log('Failed.  Try again');
-        }
-        
-        cmd = "GRANT ALL PRIVILEGES ON `" + this.options.dbName + "`.* to '"+this.options.dbUser+"'@'localhost'; FLUSH PRIVILEGES;";
-        this.log("Executing "+cmd);
-        while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
-            log('Failed.  Try again');
-        }
-        
-
-        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p', this.options.mysqlPassword, '-e', 
-        //    'FLUSH PRIVILEGES;'
-        //])) {
-        //    log('Failed.  Try again');
-        //}
-    
+  promptGrantPermissions : function() {
+    if (this.options.createUser) {
+        return this.prompt([{
+                type: 'confirm',
+                name: 'grantPermissions',
+                message: 'Grant permissions to ' + this.options.dbUser+' now?',
+                default: true
+            }
+        ]).then(function(answers) {
+            this.options.grantPermissions = answers.grantPermissions;
+            
+        }.bind(this));
     }
   },
+  
+  promptMySQLHost2 : function() {
+    if (this.options.createUser|| this.options.grantPermissions) {
+        return promptMySQLHost(this);
+    }
+  },
+  
+  promptMySQLUser2 : function() {
+    if (this.options.createUser || this.options.grantPermissions) {
+        return promptMySQLUser(this);
+    }
+  },
+  
+  promptMySQLPassword2 : function() {
+    if (this.options.createUser || this.options.grantPermissions) {
+        return promptMySQLPassword(this);
+    }
+  },
+  
+  createUserSql : function() {
+    if (this.options.createUser) {
+        this.options.rootInstallSql = this.options.rootInstallSql || '';
+        var userHost = 'localhost';
+        if (this.options.mysqlHost !== 'localhost') {
+            userHost = '%';
+        }
+        var mysqlPath = this.options.mysql || 'mysql';
+        //this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p', '<', '"create database if not exists '+ this.options.dbName +'"']);
+        var cmd = "CREATE USER '"+this.options.dbUser+"'@'"+userHost+"' IDENTIFIED BY '"+this.options.dbPassword+"';";
+        //this.log("Executing " + cmd);
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
+        //    log('Failed.  Try again');
+        //}
+        
+        //cmd += "GRANT ALL PRIVILEGES ON `" + this.options.dbName + "`.* to '"+this.options.dbUser+"'@'"+userHost+"'; FLUSH PRIVILEGES;";
+        //this.log("Executing "+cmd);
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
+        //    log('Failed.  Try again');
+        //}
+        
+        this.options.rootInstallSql += cmd;
+    }
+  },
+  
+  grantPermissionsSql : function() {
+      if (this.options.grantPermissions) {
+        this.options.rootInstallSql = this.options.rootInstallSql || '';
+        var userHost = 'localhost';
+        if (this.options.mysqlHost !== 'localhost') {
+            userHost = '%';
+        }
+        var mysqlPath = this.options.mysql || 'mysql';
+        //this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p', '<', '"create database if not exists '+ this.options.dbName +'"']);
+        //var cmd = "CREATE USER '"+this.options.dbUser+"'@'"+userHost+"' IDENTIFIED BY '"+this.options.dbPassword+"';";
+        //this.log("Executing " + cmd);
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
+        //    log('Failed.  Try again');
+        //}
+        
+        var cmd = "GRANT ALL PRIVILEGES ON `" + this.options.dbName + "`.* to '"+this.options.dbUser+"'@'"+userHost+"'; FLUSH PRIVILEGES;";
+        //this.log("Executing "+cmd);
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p' + this.options.mysqlPassword, '-e', cmd])) {
+        //    log('Failed.  Try again');
+        //}
+        
+        this.options.rootInstallSql += cmd;
+    }
+  },
+  
   
   promptCreateUsersTable : function() {
     if (!this.options.createUsersTable && this.options.usersTable) {
         return this.prompt([{
-                type: 'input',
+                type: 'confirm',
                 name: 'createUsersTable',
-                message: 'Create the table ' + this.options.usersTable+' now? (y/n)',
-                default: 'y'
+                message: 'Create the table ' + this.options.usersTable+' now?',
+                default: true
             }
         ]).then(function(answers) {
             this.options.createUsersTable = answers.createUsersTable;
-            //this.log('base package', answers.pkg);
         }.bind(this));
     }
   },
   
-  createUsersTable : function() {
-    if (this.options.createUsersTable == 'y') {
-        var mysqlPath = this.options.mysql || 'mysql';
+  createUsersTableSql : function() {
+    if (this.options.createUsersTable) {
+        //this.options.createUsersTable = answers.createUsersTable;
+        this.options.installSql = this.optionsInstallSql || '';
+        
         var cmd = "create table if not exists `" + this.options.usersTable + "` ("
             + "    `" + this.options.usernameColumn + "` VARCHAR(100) NOT NULL PRIMARY KEY,"
             + "    `" + this.options.passwordColumn + "` VARCHAR(64) NOT NULL,\r\n"
             + "    `" + this.options.roleColumn + "` ENUM('USER','ADMIN') DEFAULT 'USER',"
             + "    `" + this.options.emailColumn + "` VARCHAR(255) NOT NULL,"
             + "    UNIQUE KEY (`" + this.options.emailColumn +"`));";
-        this.log("Executing: " + cmd);
-        while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost,'-e', cmd, '-p'+this.options.mysqlPassword, this.options.dbName])) {
-            log('Failed.  Try again');
-        }
-        
-        
+            
+        this.options.installSql += cmd;
     }
   },
   
   promptCreateAdminUser : function() {
-    if (!this.options.createAdminUser && this.options.createUsersTable == 'y') {
+    if (!this.options.createAdminUser && this.options.createUsersTable) {
+        this.log("In order to log into your application, you will need to have at least one user account in your users table.  If you don't "
+            + " yet have any records inserted into the users table, you should add one now.\n");
         return this.prompt([{
-                type: 'input',
+                type: 'confirm',
                 name: 'createAdminUser',
-                message: 'Insert Admin user in users table?(y/n)',
-                default: 'y'
+                message: 'Insert Admin user in users table?',
+                default: true
             }
         ]).then(function(answers) {
             this.options.createAdminUser = answers.createAdminUser;
@@ -606,7 +780,7 @@ module.exports = generators.Base.extend({
   },
   
   promptAdminUser : function() {
-    if (this.options.createAdminUser == 'y') {
+    if (this.options.createAdminUser) {
         return this.prompt([{
                 type: 'input',
                 name: 'adminUser',
@@ -621,9 +795,9 @@ module.exports = generators.Base.extend({
   },
   
   promptAdminPassword : function() {
-    if (this.options.createAdminUser == 'y') {
+    if (this.options.createAdminUser) {
         return this.prompt([{
-                type: 'input',
+                type: 'password',
                 name: 'adminPassword',
                 message: 'Admin password',
                 default: 'password'
@@ -636,7 +810,7 @@ module.exports = generators.Base.extend({
   },
   
   promptAdminEmail : function() {
-    if (this.options.createAdminUser == 'y') {
+    if (this.options.createAdminUser) {
         return this.prompt([{
                 type: 'input',
                 name: 'adminEmail',
@@ -648,9 +822,10 @@ module.exports = generators.Base.extend({
         }.bind(this));
     }
   },
-  createAdminUser : function() {
-    if (this.options.createAdminUser == 'y') {
-        var mysqlPath = this.options.mysql || 'mysql';
+  createAdminUserSql : function() {
+    if (this.options.createAdminUser) {
+        //var mysqlPath = this.options.mysql || 'mysql';
+        this.options.installSql = this.options.installSql || '';
         var cmd = "INSERT INTO `" + this.options.usersTable + "` ("
             + "`" + this.options.usernameColumn + "`,"
             + "`" + this.options.passwordColumn + "`,"
@@ -659,55 +834,61 @@ module.exports = generators.Base.extend({
             + "'" + this.options.adminUser + "',"
             + this.options.passwordEncryption + "('" + this.options.adminPassword +"'),"
             + "'ADMIN',"
-            + "'" + this.options.adminEmail + "')"; 
+            + "'" + this.options.adminEmail + "');"; 
 
-        this.log("Executing: " + cmd);
-        while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost,'-e', cmd, '-p'+this.options.mysqlPassword, this.options.dbName])) {
-            log('Failed.  Try again');
-        }
+        //this.log("Executing: " + cmd);
+        //while (!this.spawnCommandSync(mysqlPath, ['-u', this.options.dbUser, '-h', this.options.mysqlHost,'-e', cmd, '-p'+this.options.dbPassword, this.options.dbName])) {
+        //    log('Failed.  Try again');
+        //}
+        
+        this.options.installSql += cmd;
         
         
     }
   },
   
+  loadInstallSql : function() {
+    if (this.installFile && fs.existsSync(this.installFile)) {
+        this.options.installSql = this.options.installSql || '';
+        var cmd = fs.readFileSync(this.destinationPath(this.installFile), 'utf8');
+        //sed -i 's/DEFINER=[^*]*\*/\*/g' mydump.sql
+        cmd = cmd.replace(/DEFINER=[^ ]*/g,''); 
+        if (cmd) {
+            this.options.installSql = cmd + this.options.installSql;
+        }
+    }
+  },
   
+  runSQLCommandsAsRoot : function() {
+    if (this.options.rootInstallSql) {
+        var mysqlPath = this.options.mysql || 'mysql';
+        this.log("Preparing to execute SQL commands to create the database and/or user: \n\n" + this.options.rootInstallSql);
+        this.log("Please enter the MySQL password for the user "+this.options.mysqlUser+" at the prompt.");
+        var cmd = this.options.rootInstallSql;
+        var res = this.spawnCommandSync(mysqlPath, ['-u', this.options.mysqlUser, '-h', this.options.mysqlHost, '-p', '-e', cmd]);
+        this.log("Result: "+res);
+    }
+  },
   
+  runSQLCommands : function() {
+    if (this.options.installSql) {
+        var mysqlPath = this.options.mysql || 'mysql';
+        this.log("Preparing to execute SQL commands to setup the users table: \n\n" + this.options.installSql);
+        this.log("Please enter the MySQL password for the user "+this.options.dbUser+" at the prompt.");
+        var cmd = this.options.installSql;
+        var res = this.spawnCommandSync(mysqlPath, ['-u', this.options.dbUser, '-h', this.options.mysqlHost,'-e', cmd, '-p', this.options.dbName]);
+        this.log("Result: "+res);
+    }
+  },
   
-  /*
-  copyProperties: function() {
-    var done = this.async();
-    this.log("Copying properties file");
-    var propertiesSamplePath = this.destinationPath(this.appname + '/config.properties.sample');
-    var propertiesPath = this.destinationPath(this.appname + '/config.properties');
-    this.propertiesPath = propertiesPath;
-    var source = fs.createReadStream(propertiesSamplePath);
-    var dest = fs.createWriteStream(propertiesPath);
-
-    source.pipe(dest);
-    source.on('end', function() {
-        fs.unlinkSync(propertiesSamplePath);
-        done();
-    });
-    source.on('error', function(err) { this.log("Failed to move config properties"); });
+  showComplete : function() {
+      this.log("The app has been successfully created at "+this.destinationPath(this.appname)+"\n\n"
+        + "You can now try to load the app in your web browser.  You are also encouraged to take a look at the files that were generated "+
+        " to familiarize yourself with the app structure because this is just the beginning of your application.  You will undoubtedly want to "
+        + "customize it further.\n"
+        + "For more information please see the Xataface website http://xataface.com");
     
-  },
+   }
   
-  updateProperties: function() {
-    this.log("Updating properties");
-    var contents = fs.readFileSync(this.propertiesPath, 'utf-8');
-    contents = contents.replace('base.package.name=com.example', 'base.package.name='+this.options.pkg)
-        .replace('artifact.prefix=com-example-app', 'artifact.prefix='+this.options.pkg.replace(/\./g, '-'))
-        .replace('base.package.path=com/example', 'base.package.path='+this.options.pkg.replace(/\./g, '/'));
-    //this.fs.write(this.propertiesPath, contents);
-    fs.writeFileSync(this.propertiesPath, contents);
-  },
   
-  antSetup: function() {
-    this.spawnCommandSync('ant', ['setup'], {cwd: this.destinationPath(this.appname)});
-  },
-  
-  antInstallShared: function() {
-    this.spawnCommandSync('ant', ['install-shared'], {cwd: this.destinationPath(this.appname)});
-  },
-  */
 });
